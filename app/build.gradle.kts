@@ -1,6 +1,10 @@
+import org.jetbrains.kotlin.resolve.sam.SamConstructorDescriptorKindExclude.excludes
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
+    kotlin("kapt")
+    alias(libs.plugins.google.dagger.hilt)
 }
 
 android {
@@ -44,9 +48,12 @@ android {
     }
     packaging {
         resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "META-INF/*"
+
         }
     }
+    //packagingOptions { resources.excludes.add("META-INF/*") }
+
 }
 
 dependencies {
@@ -64,16 +71,20 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
+    androidTestImplementation(libs.junit.jupiter)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
-    implementation ("com.google.android.gms:play-services-location:21.0.1")
-    implementation ("androidx.compose.ui:ui:1.2.0")
-    implementation ("androidx.compose.material:material:1.2.0")
-    implementation ("androidx.compose.ui:ui-tooling-preview:1.2.0")
-    implementation ("androidx.lifecycle:lifecycle-runtime-ktx:2.4.1")
-    implementation ("androidx.activity:activity-compose:1.5.0")
-    implementation ("com.google.accompanist:accompanist-permissions:0.30.1")
-
+    implementation("com.google.android.gms:play-services-location:21.0.1")
+    implementation("androidx.compose.ui:ui:1.2.0")
+    implementation("androidx.compose.material:material:1.2.0")
+    implementation("androidx.compose.ui:ui-tooling-preview:1.2.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.4.1")
+    implementation("androidx.activity:activity-compose:1.5.0")
+    implementation("com.google.accompanist:accompanist-permissions:0.30.1")
+    //Hilt
+    implementation(libs.google.dagger.hilt)
+    kapt(libs.google.dagger.hilt.compiler)
+    implementation("androidx.hilt:hilt-navigation-compose:1.0.0-alpha03")
 
 
 }

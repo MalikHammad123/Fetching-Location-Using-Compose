@@ -1,8 +1,6 @@
 package com.example.locationfetching
 
-import android.content.Context
 import android.location.Location
-import android.location.LocationManager
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -17,69 +15,76 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.locationfetching.interfaces.LocationPermissionChecker
+import com.example.locationfetching.interfaces.LocationProvider
 import com.example.locationfetching.ui.theme.LocationFetchingTheme
+import com.example.locationfetching.viewModel.LocationViewModel
+import com.google.android.gms.location.LocationServices
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import javax.inject.Inject
 
-private const val TAG = "LocationFetchingDebug"
+const val TAG = "LocationFetchingDebug"
 
+
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-    private val locationWrapper by lazy { LocationWrapper(this) }
+    @Inject
+    lateinit var locationPermissionChecker: LocationPermissionChecker
+    @Inject
+    lateinit var locationFetcher: LocationProvider
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             LocationFetchingTheme {
-                LastLocationButton(locationWrapper)
+                LastLocationButton(
+                    locationPermissionChecker,
+                    locationFetcher,
+                )
             }
         }
     }
 }
 
 
-fun isLocationEnabled(context: Context): Boolean {
-    val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-    val isEnabled =
-        locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) || locationManager.isProviderEnabled(
-            LocationManager.NETWORK_PROVIDER
-        )
-    Log.d(TAG, "isLocationEnabled: $isEnabled")
-    return isEnabled
-}
+
 
 @Composable
-fun LastLocationButton(locationWrapper: LocationWrapper) {
+fun LastLocationButton(
+    locationPermissionChecker: LocationPermissionChecker,
+    locationFetcher: LocationProvider,
+    viewModel: LocationViewModel = hiltViewModel()
+) {
+    val locationPermissionState by viewModel.locationPermissionState.collectAsState()
+    val gpsEnabledState by viewModel.gpsEnabledState.collectAsState()
     var lastLocation by remember { mutableStateOf<Location?>(null) }
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     val requestPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
+        viewModel.checkLocationPermission()
         if (isGranted) {
-            // Permission granted, fetch location
-            locationWrapper.fetchLastLocation(
-                onSuccess = { location ->
-                    lastLocation = location
-                    Log.d(TAG, "Last location fetched: $location")
-                },
-                onPermissionDenied = {
-                    // Handle permission denied logic
-                    Log.d(TAG, "Permission denied")
-                },
-                onLocationServicesNotEnabled = {
-                    // Handle location services not enabled logic
-                    Log.d(TAG, "Location services not enabled")
-                }
-            )
+            fetchLocation(coroutineScope, locationFetcher, onSuccess = { location ->
+                lastLocation = location
+                Log.d(TAG, "Location fetched: $location")
+            })
         } else {
-            // Permission denied
             Log.d(TAG, "Permission denied by user")
         }
     }
@@ -90,32 +95,20 @@ fun LastLocationButton(locationWrapper: LocationWrapper) {
         verticalArrangement = Arrangement.Center
     ) {
         Button(onClick = {
-            // Request location permission
-            if (locationWrapper.hasLocationPermission()) {
-                // Permission already granted, fetch location
-                locationWrapper.fetchLastLocation(
-                    onSuccess = { location ->
-                        lastLocation = location
-                        Log.d(TAG, "Last location fetched: $location")
-                    },
-                    onPermissionDenied = {
-                        // Handle permission denied logic
-                        Log.d(TAG, "Permission denied")
-                    },
-                    onLocationServicesNotEnabled = {
-                        // Handle location services not enabled logic
-                        Log.d(TAG, "Location services not enabled")
-                    }
-                )
+            viewModel.checkLocationPermission()
+            viewModel.checkGPSEnabled()
+            if (locationPermissionState) {
+                fetchLocation(coroutineScope, locationFetcher, onSuccess = { location ->
+                    lastLocation = location
+                    Log.d(TAG, "Location fetched: $location")
+                })
             } else {
-                // Request location permission
                 requestPermissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
             }
         }) {
-            Text(text = "Get Last Location")
+            Text(text = "Get Location")
         }
 
-        // Display last location details if available
         lastLocation?.let {
             Text(
                 text = "Latitude: ${it.latitude}, Longitude: ${it.longitude}",
@@ -128,5 +121,40 @@ fun LastLocationButton(locationWrapper: LocationWrapper) {
                 text = "Accuracy: ${it.accuracy} meters", modifier = Modifier.padding(top = 8.dp)
             )
         }
+
+        Text(
+            text = "Location Permission: ${if (locationPermissionState) "Granted" else "Denied"}",
+            modifier = Modifier.padding(top = 16.dp)
+        )
+
+        Text(
+            text = "GPS Enabled: ${if (gpsEnabledState) "Yes" else "No"}",
+            modifier = Modifier.padding(top = 16.dp)
+        )
     }
 }
+
+private fun fetchLocation(
+    coroutineScope: CoroutineScope,
+    locationFetcher: LocationProvider,
+    onSuccess: (Location?) -> Unit
+) {
+    coroutineScope.launch {
+        try {
+            val location = try {
+                locationFetcher.getCurrentLocation()
+            } catch (e: LocationFetcher.LocationNotFoundException) {
+                locationFetcher.getLastLocation()
+            }
+            onSuccess(location)
+        } catch (e: LocationFetcher.PermissionDeniedException) {
+            Log.d(TAG, "Permission denied")
+        } catch (e: LocationFetcher.LocationServicesNotEnabledException) {
+            Log.d(TAG, "Location services not enabled")
+        }
+    }
+}
+
+
+
+
